@@ -1,21 +1,49 @@
-// في ملف lib/services/training_storage.dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../constants.dart';
 
 class TrainingDataStorage {
-  static Map<String, String> _storage = {
-    'الأحد': "تمرين الجزء العلوي: ضغط بنش (3x10)، سحب عالي (3x12)، تجميع كيبل (4x15).",
-    'الاثنين': "تمرين الجزء السفلي: سكوات (4x8)، رفع ميت (3x10)، رفرفة جانبية (4x15).",
-    'الثلاثاء': "راحة واستشفاء: كارديو خفيف لمدة 30 دقيقة أو تمدد.",
-    'الأربعاء': "تمرين الدفع (Push): صدر علوي بالدمبل، أكتاف أمامي، ترايسبس كيبل.",
-    'الخميس': "تمرين السحب (Pull): ظهر واسع، سحب أفقي، بايسبس مطرقة.",
-    'الجمعة': "تدريب وظيفي (Functional) وتركيز على البطن والتحمل.",
-    'السبت': "راحة تامة واستشفاء أو نشاط رياضي خفيف وممتع.",
+  static Map<String, String> _getHeaders(String token) => {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'Authorization': 'Bearer $token',
   };
 
-  static String get(String day) {
-    return _storage[day] ?? "لا توجد تدريبات محددة لهذا اليوم.";
+  static Future<List<dynamic>> fetchAllTrainings(String token) async {
+    final url = Uri.parse('${Constants.BASE_URL}/training-sessions');
+    try {
+      final response = await http.get(url, headers: _getHeaders(token));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['data'] ?? [];
+      }
+    } catch (e) { print("Fetch Error: $e"); }
+    return [];
   }
 
-  static void update(String day, String content) {
-    _storage[day] = content;
+  // دالة الإضافة (POST) - تستخدم عندما تكون الجلسة غير مسجلة
+  static Future<bool> saveNewTraining(String token, Map<String, dynamic> data) async {
+    final url = Uri.parse('${Constants.BASE_URL}/training-sessions');
+    try {
+      final response = await http.post(
+        url,
+        headers: _getHeaders(token),
+        body: json.encode(data),
+      );
+      return response.statusCode == 201 || response.statusCode == 200;
+    } catch (e) { return false; }
+  }
+
+  // دالة التعديل (PUT) - تستخدم للجلسات الموجودة مسبقاً
+  static Future<bool> updateInDatabase(String token, int id, Map<String, dynamic> data) async {
+    final url = Uri.parse('${Constants.BASE_URL}/training-sessions/$id');
+    try {
+      final response = await http.put(
+        url,
+        headers: _getHeaders(token),
+        body: json.encode(data),
+      );
+      return response.statusCode == 200;
+    } catch (e) { return false; }
   }
 }

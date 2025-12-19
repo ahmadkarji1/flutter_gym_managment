@@ -2,18 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/member_provider.dart';
 import '../models/member.dart';
-import '../widgets/input_field.dart'; // أصبح الآن CustomInputField
+import '../widgets/input_field.dart';
 
-// تعريف الألوان الأساسية للثيم الناري الداكن
-const Color _kBackgroundColor = Color(0xFF121212);    // الأسود الداكن (الخلفية)
-const Color _kCardColor = Color(0xFF1E1E1E);          // رمادي داكن للبطاقة والعنوان
-const Color _kPrimaryColor = Color(0xFFFF8800);       // البرتقالي الناري (اللون الأساسي)
-const Color _kTextColor = Colors.white;              // الأبيض (لون النص الرئيسي)
-const Color _kErrorColor = Color(0xFFCF6679);         // الأحمر الداكن للأخطاء
+// الثيم اللوني الموحد
+const Color _kBackgroundColor = Color(0xFF121212);
+const Color _kCardColor = Color(0xFF1E1E1E);
+const Color _kPrimaryColor = Color(0xFFFF8800);
+const Color _kTextColor = Colors.white;
+const Color _kErrorColor = Color(0xFFCF6679);
+const Color _kSuccessColor = Color(0xFF00C853);
 
 class RegisterUserScreen extends StatefulWidget {
   final Member? member;
   const RegisterUserScreen({super.key, this.member});
+
   @override
   State<RegisterUserScreen> createState() => _RegisterUserScreenState();
 }
@@ -22,20 +24,18 @@ class _RegisterUserScreenState extends State<RegisterUserScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
-  // 1. ✅ تغيير اسم المتحكم إلى _daysController
   final _daysController = TextEditingController();
   final _passwordController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
+    // إذا كانت العملية "تعديل"، نملأ الحقول بالبيانات الحالية
     if (widget.member != null) {
       _nameController.text = widget.member!.name;
       _emailController.text = widget.member!.email;
-
-      // 2. ✅ استخدام الحقل الجديد remainingDays من User/Member Model
-      // نفترض أن Member Model تم تحديثه ليحتوي على remainingDays
-      _daysController.text = widget.member!.remainingDays?.toString() ?? '0';
+      // عرض الأيام المتبقية الحالية كقيمة افتراضية عند التعديل
+      _daysController.text = widget.member!.remainingDays.toString();
     }
   }
 
@@ -43,18 +43,15 @@ class _RegisterUserScreenState extends State<RegisterUserScreen> {
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
-    // ✅ التخلص من المتحكم الجديد
     _daysController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
-  // دالة بناء (build)
   @override
   Widget build(BuildContext context) {
+    // نستخدم listen: true هنا لمتابعة حالة isLoading فقط
     final provider = Provider.of<MemberProvider>(context);
-
-    final Color themeColor = _kPrimaryColor;
     final String title = widget.member != null ? 'تعديل بيانات المشترك' : 'تسجيل مشترك جديد';
 
     return Directionality(
@@ -73,96 +70,121 @@ class _RegisterUserScreenState extends State<RegisterUserScreen> {
             padding: const EdgeInsets.all(25),
             children: [
               // حقل الاسم
-              CustomInputField(controller: _nameController, label: 'الاسم', icon: Icons.person, themeColor: themeColor),
+              CustomInputField(
+                  controller: _nameController,
+                  label: 'الاسم الكامل',
+                  icon: Icons.person,
+                  themeColor: _kPrimaryColor
+              ),
               const SizedBox(height: 18),
 
               // حقل الايميل
-              CustomInputField(controller: _emailController, label: 'الايميل', icon: Icons.email, themeColor: themeColor, keyboardType: TextInputType.emailAddress),
+              CustomInputField(
+                  controller: _emailController,
+                  label: 'البريد الإلكتروني',
+                  icon: Icons.email,
+                  themeColor: _kPrimaryColor,
+                  keyboardType: TextInputType.emailAddress
+              ),
               const SizedBox(height: 18),
 
-              // 3. ✅ تغيير الحقل إلى "عدد أيام الاشتراك" واستخدام المتحكم الجديد
+              // حقل أيام الاشتراك
               CustomInputField(
-                  controller: _daysController, // استخدام المتحكم الجديد
-                  label: 'عدد أيام الاشتراك', // تغيير النص المعروض في الواجهة
-                  icon: Icons.calendar_today, // تغيير الأيقونة لتناسب الأيام
-                  themeColor: themeColor,
+                  controller: _daysController,
+                  label: 'مدة الاشتراك (بالأيام)',
+                  icon: Icons.history_toggle_off,
+                  themeColor: _kPrimaryColor,
                   keyboardType: TextInputType.number
               ),
 
+              // حقل كلمة المرور (يظهر فقط عند إضافة عضو جديد)
               if (widget.member == null) ...[
                 const SizedBox(height: 18),
-                // حقل كلمة المرور (يظهر فقط عند التسجيل الجديد)
-                CustomInputField(controller: _passwordController, label: 'كلمة المرور', icon: Icons.lock, themeColor: themeColor, obscureText: true)
+                CustomInputField(
+                    controller: _passwordController,
+                    label: 'كلمة المرور',
+                    icon: Icons.lock,
+                    themeColor: _kPrimaryColor,
+                    obscureText: true
+                ),
               ],
 
               const SizedBox(height: 40),
 
+              // زر الحفظ / التعديل
               ElevatedButton(
-                onPressed: provider.isLoading ? null : () async {
-                  if (!_formKey.currentState!.validate()) return;
-
-                  final daysText = _daysController.text.trim(); // استخدام المتحكم الجديد
-                  final days = int.tryParse(daysText);
-
-                  if (days == null || days < 0) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          // تغيير رسالة الخطأ
-                            content: Text('الرجاء إدخال عدد صحيح موجب لأيام الاشتراك.'),
-                            backgroundColor: _kErrorColor
-                        ),
-                      );
-                    }
-                    return;
-                  }
-
-                  // 4. ✅ تغيير المفتاح المرسل إلى الخادم إلى 'subscription_days'
-                  final data = {
-                    'name': _nameController.text,
-                    'email': _emailController.text,
-                    'subscription_days': days, // المفتاح الذي يتوقعه الخادم الآن
-                  };
-
-                  final memberProviderAction = Provider.of<MemberProvider>(context, listen: false);
-
-                  try {
-                    if (widget.member == null) {
-                      data['password'] = _passwordController.text;
-                      data['role'] = 'member';
-                      await memberProviderAction.addMember(data);
-                    } else {
-                      await memberProviderAction.editMember(widget.member!.id, data);
-                    }
-
-                    if (mounted) Navigator.pop(context);
-
-                  } catch (e) {
-                    if (mounted) {
-                      String errorMessage = e.toString().replaceFirst('Exception: ', '');
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content: Text('فشل الحفظ: $errorMessage'),
-                            backgroundColor: _kErrorColor
-                        ),
-                      );
-                    }
-                  }
-                },
+                onPressed: provider.isLoading ? null : _submitData,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: themeColor,
+                  backgroundColor: _kPrimaryColor,
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 5,
                 ),
                 child: provider.isLoading
-                    ? const CircularProgressIndicator(color: _kTextColor)
-                    : Text(widget.member != null ? 'تعديل البيانات' : 'حفظ المشترك',
-                    style: const TextStyle(color: _kTextColor, fontSize: 18, fontWeight: FontWeight.bold)),
+                    ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(color: _kTextColor, strokeWidth: 2),
+                )
+                    : Text(
+                  widget.member != null ? 'تحديث البيانات' : 'إتمام التسجيل',
+                  style: const TextStyle(
+                      color: _kTextColor,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold
+                  ),
+                ),
               )
             ],
           ),
         ),
       ),
+    );
+  }
+
+  // دالة معالجة البيانات وإرسالها للسيرفر
+  Future<void> _submitData() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final days = int.tryParse(_daysController.text.trim());
+    if (days == null || days < 0) {
+      _showSnackBar('الرجاء إدخال عدد أيام صحيح (0 أو أكثر)', _kErrorColor);
+      return;
+    }
+
+    final data = {
+      'name': _nameController.text.trim(),
+      'email': _emailController.text.trim(),
+      'subscription_days': days, // الربط مع Laravel
+    };
+
+    final memberProvider = Provider.of<MemberProvider>(context, listen: false);
+
+    try {
+      if (widget.member == null) {
+        // إضافة عضو جديد
+        data['password'] = _passwordController.text;
+        data['role'] = 'member';
+        await memberProvider.addMember(data);
+        _showSnackBar('تم تسجيل المشترك بنجاح', _kSuccessColor);
+      } else {
+        // تعديل عضو حالي
+        await memberProvider.editMember(widget.member!.id, data);
+        _showSnackBar('تم تحديث البيانات بنجاح', _kSuccessColor);
+      }
+
+      if (mounted) Navigator.pop(context);
+
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar('خطأ: ${e.toString().replaceAll('Exception: ', '')}', _kErrorColor);
+      }
+    }
+  }
+
+  void _showSnackBar(String message, Color bgColor) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: bgColor),
     );
   }
 }

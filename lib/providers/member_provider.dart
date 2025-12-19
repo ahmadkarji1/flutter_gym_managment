@@ -20,51 +20,49 @@ class MemberProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // دالة مساعدة لإنشاء الـ Headers المشتركة
   Map<String, String> _getHeaders() {
     return {
-      'Authorization': 'Bearer ${auth.token!}',
+      'Authorization': 'Bearer ${auth.token ?? ""}',
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      // ✅ الإضافة الضرورية لحل مشكلة 302 Redirect في Laravel
-      'X-Requested-With': 'XMLHttpRequest',
     };
   }
 
-  // جلب الأعضاء
-  Future<void> fetchAndSetMembers() async {
+  // -----------------------------------------------------------
+  // 1. جلب الأعضاء (تم تحسين معالجة البيانات لضمان عدم الاختفاء)
+  // -----------------------------------------------------------
+  Future<void> fetchAndSetMembers({String query = ""}) async {
     if (auth.token == null) return;
     _setLoading(true);
-
     try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/members'),
-        headers: _getHeaders(),
-      );
-
-      print("Fetch Members Status: ${response.statusCode}");
-      print("Fetch Members Body: ${response.body}");
+      final url = Uri.parse('$_baseUrl/members?search=$query');
+      final response = await http.get(url, headers: _getHeaders());
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
 
-        if (responseData.containsKey('members')) {
+        // التأكد من أن السيرفر أرجع الحالة true وأن المفتاح members موجود
+        if (responseData['status'] == true && responseData['members'] != null) {
           final List<dynamic> data = responseData['members'];
           _members = data.map((item) => Member.fromJson(item)).toList();
+        } else {
+          _members = []; // إذا لم يوجد نتائج، نفرغ القائمة بدلاً من تركها معلقة
         }
+      } else {
+        debugPrint("Server Error: ${response.statusCode}");
       }
     } catch (e) {
-      print("Error fetching: $e");
+      debugPrint("Fetch Error: $e");
     } finally {
-      _setLoading(false);
+      _setLoading(false); // notifyListeners مستدعى داخل setLoading
     }
   }
 
-  // إضافة الأعضاء
-  Future<bool> addMember(Map<String, dynamic> data) async {
-    if (auth.token == null) throw Exception('غير مصرح لك');
+  // -----------------------------------------------------------
+  // 2. إضافة عضو جديد (يستدعي fetch لضمان التحديث والترتيب)
+  // -----------------------------------------------------------
+  Future<void> addMember(Map<String, dynamic> data) async {
     _setLoading(true);
-
     try {
       final response = await http.post(
         Uri.parse('$_baseUrl/register_member'),
@@ -72,19 +70,13 @@ class MemberProvider with ChangeNotifier {
         body: json.encode(data),
       );
 
-      print("Add Member Status: ${response.statusCode}");
-      print("Add Member Body: ${response.body}");
+      final responseData = json.decode(response.body);
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        return true;
+        // تحديث القائمة فوراً من السيرفر لضمان ظهور العضو الجديد
+        await fetchAndSetMembers();
       } else {
-        final errorBody = json.decode(response.body);
-        String errorMessage = errorBody['message'] ?? 'فشل الحفظ (خطأ غير معروف)';
-        if (errorBody.containsKey('errors')) {
-          errorMessage = errorBody['errors'].values.first[0] ?? errorMessage;
-        }
-
-        throw Exception(errorMessage);
+        throw Exception(responseData['message'] ?? 'فشل إضافة المشترك');
       }
     } catch (e) {
       rethrow;
@@ -93,33 +85,26 @@ class MemberProvider with ChangeNotifier {
     }
   }
 
-  // ✅ تعديل الأعضاء (PATCH) - تم إضافة الـ Headers
+  // -----------------------------------------------------------
+  // 3. تعديل عضو (تم دمج النسختين في دالة واحدة صحيحة)
+  // -----------------------------------------------------------
   Future<void> editMember(int memberId, Map<String, dynamic> data) async {
-    if (auth.token == null) throw Exception('غير مصرح لك');
     _setLoading(true);
-
     try {
-      final response = await http.patch(
+      final response = await http.put(
         Uri.parse('$_baseUrl/members/$memberId'),
-        headers: _getHeaders(), // استخدام الـ Headers الجديدة
+        headers: _getHeaders(),
         body: json.encode(data),
       );
 
-      print("Edit Member Status: ${response.statusCode}");
-      print("Edit Member Body: ${response.body}");
+      final responseData = json.decode(response.body);
 
       if (response.statusCode == 200) {
-        await fetchAndSetMembers(); // تحديث القائمة فوراً
+        // تحديث القائمة ليعاد ترتيب الأعضاء حسب الأيام المعدلة
+        await fetchAndSetMembers();
       } else {
-        final errorBody = json.decode(response.body);
-        String errorMessage = errorBody['message'] ?? 'فشل التعديل (خطأ غير معروف)';
-        if (errorBody.containsKey('errors')) {
-          errorMessage = errorBody['errors'].values.first[0] ?? errorMessage;
-        }
-
-        throw Exception(errorMessage);
+        throw Exception(responseData['message'] ?? 'فشل تعديل البيانات');
       }
-
     } catch (e) {
       rethrow;
     } finally {
@@ -127,24 +112,23 @@ class MemberProvider with ChangeNotifier {
     }
   }
 
-  // حذف الأعضاء (DELETE) - تم إضافة الـ Headers
+  // -----------------------------------------------------------
+  // 4. حذف عضو
+  // -----------------------------------------------------------
   Future<void> deleteMember(int memberId) async {
-    if (auth.token == null) return;
     _setLoading(true);
     try {
       final response = await http.delete(
         Uri.parse('$_baseUrl/members/$memberId'),
-        headers: _getHeaders(), // استخدام الـ Headers الجديدة
+        headers: _getHeaders(),
       );
 
-      print("Delete Member Status: ${response.statusCode}");
-      print("Delete Member Body: ${response.body}");
-
-      if (response.statusCode == 200 || response.statusCode == 204) {
+      if (response.statusCode == 200) {
+        // حذف محلي سريع لتحسين تجربة المستخدم
         _members.removeWhere((m) => m.id == memberId);
         notifyListeners();
       } else {
-        throw Exception('فشل الحذف: ${response.statusCode}');
+        throw Exception("فشل الحذف من السيرفر");
       }
     } catch (e) {
       rethrow;
